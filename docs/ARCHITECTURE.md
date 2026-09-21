@@ -41,6 +41,40 @@ Routes the audio. Connects the Caller to the Receiver, and simultaneously forks 
 4. **Action/Alert:**
    - If risk exceeds a threshold, secondary verification workflows or security alerts are triggered on the mobile app.
 
+### End-to-End Pipeline Data Flow
+
+```mermaid
+sequenceDiagram
+    participant P as Telephony Provider (Twilio)
+    participant I as Stream Ingest Router
+    participant A as Audio Pipeline (VAD/Window)
+    participant ML as AntiSpoof Model
+    participant RE as Risk Engine
+    participant R as Redis Pub/Sub
+    participant M as Mobile App (React Native)
+
+    P->>I: WebSocket Connection & "start"
+    I->>R: Publish "call.started" (session_id, call_id)
+    
+    loop Every Audio Frame
+        P->>I: "media" (base64 mu-law)
+        I->>A: Push PCM 16kHz Chunk
+    end
+    
+    loop Every 3 seconds (1s stride)
+        A->>I: Emit Window (3s audio, metrics)
+        I->>ML: Inference predict()
+        ML-->>I: spoof_probability
+        I->>RE: process_window()
+        RE-->>I: RiskUpdateEvent
+        I->>R: Publish "risk.update"
+        R->>M: Forward over Mobile WebSocket
+    end
+    
+    P->>I: "stop"
+    I->>R: Publish "call.ended" & Save Summary
+```
+
 ## Security & Privacy
 - Audio streams are processed in-memory and not stored persistently unless specifically configured for debugging/enrollment with user consent.
 - Communication between backend and mobile uses secure WebSockets (WSS) and HTTPS.

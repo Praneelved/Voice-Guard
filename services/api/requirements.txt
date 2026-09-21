@@ -13,3 +13,5 @@ torch
 torchaudio
 transformers
 audioop-lts
+python-dotenv
+redis

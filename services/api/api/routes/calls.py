@@ -6,11 +6,10 @@ import asyncio
 
 from schemas.calls import CallCreate, CallResponse
 from core.sessions import active_calls
-from core.risk_engine import RiskSimulator
+from core.redis_client import subscribe_events, get_state
+import json
 
 router = APIRouter()
-
-active_simulators = {}
 
 @router.post("/v1/calls", response_model=CallResponse)
 def create_call(call: CallCreate):
@@ -45,16 +44,29 @@ def get_call_events(id: str):
 async def websocket_call_events(websocket: WebSocket, call_id: str):
     await websocket.accept()
     
-    simulator = RiskSimulator(call_id=call_id)
-    active_simulators[call_id] = simulator
-    
-    task = asyncio.create_task(simulator.run(websocket.send_text))
-    
+    # Check if the call already ended
+    summary = await get_state(f"summary:{call_id}")
+    if summary:
+        await websocket.send_text(json.dumps({
+            "event_type": "call.ended",
+            "payload": json.loads(summary)
+        }))
+        await websocket.close()
+        return
+        
     try:
-        while True:
-            # Keep connection open, wait for client to disconnect or send data
-            data = await websocket.receive_text()
+        async for event in subscribe_events(call_id):
+            await websocket.send_text(event)
+            
+            event_dict = json.loads(event)
+            if event_dict.get("event_type") == "call.ended":
+                break
+                
     except WebSocketDisconnect:
-        simulator.stop()
-        task.cancel()
-        del active_simulators[call_id]
+        pass
+    except Exception as e:
+        print(f"Client disconnected or error: {e}")
+    finally:
+        from starlette.websockets import WebSocketState
+        if websocket.client_state != WebSocketState.DISCONNECTED:
+            await websocket.close()
