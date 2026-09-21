@@ -1,0 +1,11 @@
+fastapi
+pydantic
+uvicorn
+websockets
+pytest
+httpx
+numpy
+webrtcvad
+soundfile
+librosa
+setuptools
