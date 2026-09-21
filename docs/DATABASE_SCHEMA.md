@@ -1,50 +1,121 @@
 # VoiceGuard Database Schema
 
-## Overview
-PostgreSQL (managed via Supabase) will be the primary persistent data store.
+VoiceGuard uses PostgreSQL (via Supabase) as its primary persistent storage mechanism. The backend interfaces with the database using **SQLAlchemy** (asynchronous) and uses **Alembic** for schema migrations.
 
-### Table: `users`
-- `id` (UUID, Primary Key)
-- `email` (String, Unique)
-- `name` (String)
-- `organization_id` (UUID, Nullable, Foreign Key)
-- `created_at` (Timestamp)
+## ER Diagram
 
-### Table: `user_settings`
-- `user_id` (UUID, Primary Key, Foreign Key to `users`)
-- `privacy_level` (String: 'strict', 'standard')
-- `block_high_risk` (Boolean)
-- `notifications_enabled` (Boolean)
-- `updated_at` (Timestamp)
+```mermaid
+erDiagram
+    ORGANIZATIONS ||--o{ USERS : "has"
+    ORGANIZATIONS ||--o{ CALL_SESSIONS : "owns"
+    ORGANIZATIONS ||--o{ ALERTS : "has"
+    ORGANIZATIONS ||--o{ AUDIT_LOGS : "logs"
 
-### Table: `calls`
-- `id` (UUID, Primary Key)
-- `user_id` (UUID, Foreign Key to `users`)
-- `provider_call_id` (String, Unique from SIP provider)
-- `caller_number` (String)
-- `started_at` (Timestamp)
-- `ended_at` (Timestamp, Nullable)
-- `status` (String: 'active', 'completed', 'failed')
-- `max_risk_score` (Float)
-- `spoof_detected` (Boolean)
+    USERS ||--o{ SPEAKER_PROFILES : "has"
+    USERS ||--o{ AUDIT_LOGS : "performs"
 
-### Table: `call_events` (Optional/Archival)
-*Used for auditing and detailed history, potentially rolled off to cold storage.*
-- `id` (UUID, Primary Key)
-- `call_id` (UUID, Foreign Key to `calls`)
-- `timestamp` (Timestamp)
-- `event_type` (String: 'risk_spike', 'spoof_flag', 'user_challenged')
-- `metadata` (JSONB)
+    CALL_SESSIONS ||--o{ RISK_EVENTS : "contains"
+    CALL_SESSIONS ||--o{ SIGNAL_SCORES : "contains"
+    CALL_SESSIONS ||--o{ ALERTS : "triggers"
+    CALL_SESSIONS ||--o{ VERIFICATION_ACTIONS : "triggers"
 
-### Table: `voice_profiles` (Trusted Voices)
-- `id` (UUID, Primary Key)
-- `user_id` (UUID, Foreign Key to `users`)
-- `name` (String, e.g., "CEO", "Spouse")
-- `embedding_vector` (Vector/Array of Floats - ECAPA-TDNN embedding)
-- `status` (String: 'enrolled', 'pending')
-- `created_at` (Timestamp)
+    ORGANIZATIONS {
+        uuid id PK
+        string name
+        timestamp created_at
+    }
 
-## Cache & Ephemeral State (Redis)
-- **Active Call State:** Hash maps tracking active calls by `provider_call_id`.
-- **Rolling Risk Windows:** Time-series data / lists maintaining the last N seconds of risk scores for active calls.
-- **WebSocket Sessions:** Mapping of `user_id` to active WebSocket connection IDs for message routing.
+    USERS {
+        uuid id PK
+        uuid org_id FK
+        string email
+        string role
+        timestamp created_at
+    }
+
+    CALL_SESSIONS {
+        uuid id PK
+        uuid org_id FK
+        string provider_call_id
+        timestamp started_at
+        timestamp ended_at
+        string max_risk_level
+        float final_risk_score
+        int total_windows
+        int analyzed_windows
+    }
+
+    RISK_EVENTS {
+        uuid id PK
+        uuid call_id FK
+        timestamp timestamp
+        string risk_level
+        float risk_score
+        float confidence
+    }
+
+    SIGNAL_SCORES {
+        uuid id PK
+        uuid call_id FK
+        timestamp timestamp
+        float antispoof_score
+        string audio_quality
+        float speech_duration
+    }
+
+    ALERTS {
+        uuid id PK
+        uuid org_id FK
+        uuid call_id FK
+        string alert_type
+        string severity
+        string status
+        timestamp created_at
+    }
+
+    SPEAKER_PROFILES {
+        uuid id PK
+        uuid user_id FK
+        string embedding_path
+        timestamp created_at
+    }
+
+    VERIFICATION_ACTIONS {
+        uuid id PK
+        uuid call_id FK
+        string action_type
+        string status
+        timestamp timestamp
+    }
+    
+    MODEL_VERSIONS {
+        uuid id PK
+        string model_name
+        string version
+        timestamp deployed_at
+        boolean is_active
+    }
+    
+    AUDIT_LOGS {
+        uuid id PK
+        uuid org_id FK
+        uuid user_id FK
+        string action
+        string resource_type
+        string resource_id
+        json details
+        timestamp timestamp
+    }
+```
+
+## Core Tables
+
+1. **`organizations`** & **`users`**: Tenant isolation boundaries. All resources strictly belong to an organization.
+2. **`call_sessions`**: The master record for a phone call. It stores the lifecycle of the call, including total analyzed AI windows and the highest aggregated risk level over the duration of the call.
+3. **`risk_events`**: High-frequency telemetry. Every time the Risk Engine produces a state (e.g., every 3 seconds), an event is persisted here.
+4. **`signal_scores`**: Raw model inferences (Anti-Spoofing, Audio Quality) used for debugging and analytics.
+5. **`alerts`**: Aggregated security alerts generated by persistent high-risk conditions. These are fetched by the mobile app.
+6. **`verification_actions`**: Records secondary verification flows (e.g. out-of-band push notifications or knowledge query prompts).
+7. **`speaker_profiles`**: Metadata pointing to trusted speaker audio embeddings (stored in cloud storage).
+8. **`model_versions`**: Tracking for AI deployments to ensure auditing of which model flagged a specific call.
+9. **`audit_logs`**: Immutable ledger of administrative and security-relevant actions within an organization.

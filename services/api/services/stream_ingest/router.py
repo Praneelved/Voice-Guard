@@ -10,6 +10,8 @@ from services.antispoof import get_detector
 from services.risk_engine import RiskEngine
 from schemas.pipeline import PipelineEvent, CallSummary
 from core.redis_client import publish_event, set_state
+from core.database import async_session_maker
+from repositories.call_repository import CallRepository
 import uuid
 from datetime import datetime, timezone
 import json
@@ -70,13 +72,15 @@ async def websocket_provider_endpoint(websocket: WebSocket, provider: str):
     
     session_id = str(uuid.uuid4())
     call_id = None
+    db_call_id = None
     risk_engine = None
-    session_started_at = datetime.now(timezone.utc).isoformat()
+    session_started_at = datetime.now(timezone.utc)
     
     # Stats
     total_audio_windows = 0
     analyzed_windows = 0
     max_risk_level = "STARTING"
+    DUMMY_ORG_ID = "00000000-0000-0000-0000-000000000000"
     
     def on_window_ready(window_audio, metrics):
         nonlocal total_audio_windows
@@ -148,6 +152,20 @@ async def websocket_provider_endpoint(websocket: WebSocket, provider: str):
                 await publish_event(call_id, pipeline_event.model_dump_json())
                 logger.info(f"Published Risk Update [{call_id}]: {event.level} (Risk: {event.risk:.2f})")
                 
+                # Save asynchronously to DB
+                if db_call_id:
+                    async with async_session_maker() as db_session:
+                        repo = CallRepository(db_session)
+                        now = datetime.now(timezone.utc)
+                        await repo.add_risk_event(db_call_id, now, event.level, event.risk, event.confidence)
+                        await repo.add_signal_score(
+                            db_call_id, now, 
+                            spoof_prob if spoof_prob is not None else 0.0, 
+                            metrics.get("quality", "unknown"), 
+                            metrics.get("usable_speech_duration", 0.0)
+                        )
+                        await db_session.commit()
+                
             ai_queue.task_done()
 
     pipeline_task = asyncio.create_task(pipeline_worker())
@@ -162,6 +180,13 @@ async def websocket_provider_endpoint(websocket: WebSocket, provider: str):
                 call_id = adapter.call_id
                 risk_engine = RiskEngine(call_id=call_id)
                 logger.info(f"Initialized Session {session_id} for call {call_id}")
+                
+                # Save call to DB
+                async with async_session_maker() as db_session:
+                    repo = CallRepository(db_session)
+                    db_call = await repo.create_call_session(DUMMY_ORG_ID, call_id, session_started_at)
+                    await db_session.commit()
+                    db_call_id = db_call.id
                 
                 await publish_event(call_id, PipelineEvent(
                     session_id=session_id,
@@ -196,23 +221,33 @@ async def websocket_provider_endpoint(websocket: WebSocket, provider: str):
             await websocket.close()
             
         if call_id:
-            ended_at = datetime.now(timezone.utc).isoformat()
+            ended_at = datetime.now(timezone.utc)
             
             # Emit call ended
             await publish_event(call_id, PipelineEvent(
                 session_id=session_id,
                 call_id=call_id,
-                timestamp=ended_at,
+                timestamp=ended_at.isoformat(),
                 event_type="call.ended",
                 payload={}
             ).model_dump_json())
+            
+            # Update call session in DB
+            if db_call_id:
+                async with async_session_maker() as db_session:
+                    repo = CallRepository(db_session)
+                    await repo.finalize_call_session(
+                        db_call_id, ended_at, max_risk_level, 
+                        0.0 if not risk_engine else risk_engine.get_state().risk, 
+                        total_audio_windows, analyzed_windows
+                    )
             
             # Persist summary
             summary = CallSummary(
                 session_id=session_id,
                 call_id=call_id,
-                started_at=session_started_at,
-                ended_at=ended_at,
+                started_at=session_started_at.isoformat(),
+                ended_at=ended_at.isoformat(),
                 max_risk_level=max_risk_level,
                 total_audio_windows=total_audio_windows,
                 analyzed_windows=analyzed_windows,

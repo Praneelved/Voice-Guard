@@ -15,3 +15,7 @@ transformers
 audioop-lts
 python-dotenv
 redis
+sqlalchemy>=2.0
+asyncpg
+greenlet
+alembic

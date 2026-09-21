@@ -1,44 +1,71 @@
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from typing import List
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import asyncio
-
-from schemas.calls import CallCreate, CallResponse
-from core.sessions import active_calls
-from core.redis_client import subscribe_events, get_state
 import json
 
+from sqlalchemy.ext.asyncio import AsyncSession
+from schemas.calls import CallCreate, CallResponse
+from core.redis_client import subscribe_events, get_state
+from core.database import get_db
+from repositories.call_repository import CallRepository
+
 router = APIRouter()
+DUMMY_ORG_ID = "00000000-0000-0000-0000-000000000000"
 
 @router.post("/v1/calls", response_model=CallResponse)
-def create_call(call: CallCreate):
-    call_id = str(uuid.uuid4())
-    new_call = CallResponse(
-        id=call_id,
-        caller_number=call.caller_number,
-        status="active",
-        started_at=datetime.utcnow()
+async def create_call(call: CallCreate, db: AsyncSession = Depends(get_db)):
+    repo = CallRepository(db)
+    started_at = datetime.now(timezone.utc)
+    new_call = await repo.create_call_session(
+        org_id=DUMMY_ORG_ID,
+        provider_call_id=call.caller_number,
+        started_at=started_at
     )
-    active_calls[call_id] = new_call
-    return new_call
+    await db.commit()
+    
+    return CallResponse(
+        id=str(new_call.id),
+        caller_number=new_call.provider_call_id,
+        status="active",
+        started_at=started_at
+    )
 
 @router.get("/v1/calls", response_model=List[CallResponse])
-def get_calls():
-    return list(active_calls.values())
+async def get_calls(limit: int = 20, offset: int = 0, db: AsyncSession = Depends(get_db)):
+    repo = CallRepository(db)
+    calls = await repo.get_call_history(org_id=DUMMY_ORG_ID, limit=limit, offset=offset)
+    
+    return [
+        CallResponse(
+            id=str(c.id),
+            caller_number=c.provider_call_id,
+            status="ended" if c.ended_at else "active",
+            started_at=c.started_at,
+            ended_at=c.ended_at,
+            max_risk_score=c.final_risk_score or 0.0
+        ) for c in calls
+    ]
 
 @router.get("/v1/calls/{id}", response_model=CallResponse)
-def get_call(id: str):
-    if id not in active_calls:
+async def get_call(id: str, db: AsyncSession = Depends(get_db)):
+    repo = CallRepository(db)
+    # Note: id here is provider_call_id or internal UUID? Usually we use the DB UUID.
+    # For now, we'll try fetching by DB UUID if possible. Wait, the frontend might be polling by provider ID.
+    # We will just fetch by provider ID.
+    call = await repo.get_call_by_provider_id(id)
+    if not call:
         raise HTTPException(status_code=404, detail="Call not found")
-    return active_calls[id]
-
-@router.get("/v1/calls/{id}/events")
-def get_call_events(id: str):
-    # Mocking past events for the call
-    if id not in active_calls:
-        raise HTTPException(status_code=404, detail="Call not found")
-    return {"events": []}
+        
+    return CallResponse(
+        id=str(call.id),
+        caller_number=call.provider_call_id,
+        status="ended" if call.ended_at else "active",
+        started_at=call.started_at,
+        ended_at=call.ended_at,
+        max_risk_score=call.final_risk_score or 0.0
+    )
 
 @router.websocket("/v1/calls/{call_id}/events")
 async def websocket_call_events(websocket: WebSocket, call_id: str):
