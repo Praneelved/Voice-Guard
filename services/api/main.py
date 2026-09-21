@@ -28,6 +28,9 @@ app.include_router(alerts.router)
 app.include_router(speakers.router)
 app.include_router(verification.router)
 
+from services.stream_ingest import router as ingest_router
+app.include_router(ingest_router)
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

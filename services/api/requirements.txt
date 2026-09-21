@@ -9,3 +9,7 @@ webrtcvad
 soundfile
 librosa
 setuptools
+torch
+torchaudio
+transformers
+audioop-lts
