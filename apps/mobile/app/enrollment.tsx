@@ -15,7 +15,7 @@ export default function EnrollmentScreen() {
       </Text>
       
       <View style={styles.phraseBox}>
-        <Text style={styles.phrase}>"My voice is my secure password to authorize this action."</Text>
+        <Text style={styles.phrase}>&quot;My voice is my secure password to authorize this action.&quot;</Text>
       </View>
       
       <View style={styles.actions}>

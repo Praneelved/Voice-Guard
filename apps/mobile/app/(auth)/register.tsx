@@ -1,25 +1,84 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TextInput, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ScreenContainer, Button } from '../../components';
+import { supabase } from '../../services/supabase';
 import { colors } from '../../theme/colors';
 
 export default function RegisterScreen() {
   const router = useRouter();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleRegister = async () => {
+    if (!email || !password) {
+      Alert.alert('Error', 'Please enter email and password');
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { name }
+      }
+    });
+    setLoading(false);
+    
+    if (error) {
+      Alert.alert('Registration Failed', error.message);
+    } else {
+      Alert.alert('Success', 'Check your email for the confirmation link', [
+        { text: 'OK', onPress: () => router.replace('/(auth)/login') }
+      ]);
+    }
+  };
 
   return (
     <ScreenContainer style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Join VoiceGuard today</Text>
+        <Text style={styles.subtitle}>Sign up to secure your calls</Text>
         
         <View style={styles.form}>
-          <Button title="Register (Mock)" onPress={() => router.back()} />
+          <TextInput
+            style={styles.input}
+            placeholder="Full Name"
+            placeholderTextColor={colors.textMuted}
+            value={name}
+            onChangeText={setName}
+            autoCapitalize="words"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            placeholderTextColor={colors.textMuted}
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            placeholderTextColor={colors.textMuted}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
           <Button 
-            title="Back to login" 
+            title={loading ? "Creating account..." : "Register"} 
+            onPress={handleRegister} 
+            disabled={loading}
+          />
+          <Button 
+            title="Already have an account?" 
             variant="secondary" 
             onPress={() => router.back()} 
-            style={styles.backBtn}
+            style={styles.loginBtn}
+            disabled={loading}
           />
         </View>
       </View>
@@ -51,7 +110,18 @@ const styles = StyleSheet.create({
   form: {
     gap: 16,
   },
-  backBtn: {
+  input: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    padding: 16,
+    fontSize: 16,
+    color: colors.text,
+  },
+  loginBtn: {
     backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: colors.border,
   }
 });

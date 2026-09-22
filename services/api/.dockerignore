@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+env/
+.pytest_cache/
+*.egg-info/
+*.egg
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Tests and evaluation (not needed in prod image)
+tests/
+evaluation/
+generate_fixture.py
+
+# Documentation
+docs/
+*.md
+
+# Docker
+Dockerfile
+docker-compose*.yml
+compose*.yaml
+.dockerignore
+
+# Model weights (mounted at runtime, never baked in)
+model_weights/
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.onnx
+tmp_ecapa_models/

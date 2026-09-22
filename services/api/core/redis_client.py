@@ -49,3 +49,7 @@ async def set_state(key: str, value: str, expire_seconds: int = 3600):
 async def get_state(key: str) -> str:
     r = await get_redis()
     return await r.get(key)
+
+async def delete_state(key: str):
+    r = await get_redis()
+    await r.delete(key)

@@ -8,9 +8,6 @@ export const callApi = {
   getCall: (id: string) => 
     apiClient.get<Call>(`/calls/${id}`),
     
-  getCalls: () => 
-    apiClient.get<Call[]>('/calls'),
-    
-  getCallEvents: (id: string) => 
-    apiClient.get<{ events: RiskUpdate[] }>(`/calls/${id}/events`),
+  getCalls: (limit = 20, offset = 0, riskLevel = 'ALL') => 
+    apiClient.get<Call[]>(`/calls?limit=${limit}&offset=${offset}&risk_level=${riskLevel}`),
 };

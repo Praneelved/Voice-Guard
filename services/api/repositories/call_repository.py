@@ -25,10 +25,14 @@ class CallRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
         
-    async def get_call_history(self, org_id: str, limit: int = 20, offset: int = 0) -> List[CallSession]:
+    async def get_call_history(self, org_id: str, limit: int = 20, offset: int = 0, risk_level: Optional[str] = None) -> List[CallSession]:
+        query = select(CallSession).where(CallSession.org_id == UUID(org_id))
+        
+        if risk_level and risk_level.upper() != "ALL":
+            query = query.where(CallSession.max_risk_level == risk_level.upper())
+            
         stmt = (
-            select(CallSession)
-            .where(CallSession.org_id == UUID(org_id))
+            query
             .order_by(desc(CallSession.started_at))
             .limit(limit)
             .offset(offset)
@@ -70,3 +74,64 @@ class CallRepository:
         )
         await self.session.execute(stmt)
         await self.session.commit()
+
+    async def get_call_events(self, call_id: str) -> List[dict]:
+        """
+        Retrieves all timeline events for a given call, sorting them chronologically.
+        """
+        from models.domain import Alert
+        
+        call = await self.get_call_by_provider_id(call_id)
+        if not call:
+            call_stmt = select(CallSession).where(CallSession.id == UUID(call_id))
+            call_res = await self.session.execute(call_stmt)
+            call = call_res.scalar_one_or_none()
+            if not call:
+                return []
+
+        c_id = call.id
+        
+        events = []
+        
+        # 1. Call Started
+        events.append({
+            "timestamp": call.started_at,
+            "description": "Call started",
+            "risk_level": None,
+            "risk_score": None
+        })
+        
+        # 2. Risk Events
+        risk_stmt = select(RiskEvent).where(RiskEvent.call_id == c_id)
+        risk_result = await self.session.execute(risk_stmt)
+        for re in risk_result.scalars().all():
+            events.append({
+                "timestamp": re.timestamp,
+                "description": f"Risk updated to {re.risk_level}",
+                "risk_level": re.risk_level,
+                "risk_score": re.risk_score
+            })
+            
+        # 3. Alerts
+        alert_stmt = select(Alert).where(Alert.call_id == c_id)
+        alert_result = await self.session.execute(alert_stmt)
+        for alert in alert_result.scalars().all():
+            events.append({
+                "timestamp": alert.created_at,
+                "description": f"{alert.severity} risk alert issued: {alert.alert_type}",
+                "risk_level": alert.severity,
+                "risk_score": None
+            })
+            
+        # 4. Call Ended
+        if call.ended_at:
+            events.append({
+                "timestamp": call.ended_at,
+                "description": "Call ended",
+                "risk_level": None,
+                "risk_score": None
+            })
+            
+        # Sort by timestamp
+        events.sort(key=lambda x: x["timestamp"])
+        return events

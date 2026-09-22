@@ -9,8 +9,8 @@ export default function SettingsScreen() {
   const router = useRouter();
   const logout = useAuthStore(state => state.logout);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     router.replace('/(auth)/login');
   };
 

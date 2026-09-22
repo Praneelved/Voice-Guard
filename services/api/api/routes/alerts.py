@@ -3,15 +3,16 @@ from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 from schemas.alerts import AlertResponse
 from core.database import get_db
+from core.security import get_current_user
 from repositories.alert_repository import AlertRepository
+from typing import Dict, Any
 
 router = APIRouter()
-DUMMY_ORG_ID = "00000000-0000-0000-0000-000000000000"
 
 @router.get("/v1/alerts", response_model=List[AlertResponse])
-async def get_alerts(limit: int = 20, offset: int = 0, db: AsyncSession = Depends(get_db)):
+async def get_alerts(limit: int = 20, offset: int = 0, db: AsyncSession = Depends(get_db), current_user: Dict[str, Any] = Depends(get_current_user)):
     repo = AlertRepository(db)
-    alerts = await repo.get_alerts_for_org(org_id=DUMMY_ORG_ID, limit=limit, offset=offset)
+    alerts = await repo.get_alerts_for_org(org_id=current_user["id"], limit=limit, offset=offset)
     
     return [
         AlertResponse(
@@ -25,7 +26,7 @@ async def get_alerts(limit: int = 20, offset: int = 0, db: AsyncSession = Depend
     ]
 
 @router.post("/v1/alerts/{id}/ack")
-async def acknowledge_alert(id: str, db: AsyncSession = Depends(get_db)):
+async def acknowledge_alert(id: str, db: AsyncSession = Depends(get_db), current_user: Dict[str, Any] = Depends(get_current_user)):
     from sqlalchemy.future import select
     from models.domain import Alert
     
@@ -33,7 +34,7 @@ async def acknowledge_alert(id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(stmt)
     alert = result.scalar_one_or_none()
     
-    if alert:
+    if alert and str(alert.org_id) == current_user["id"]:
         alert.status = "resolved"
         await db.commit()
         return {"status": "acknowledged", "alert_id": id}

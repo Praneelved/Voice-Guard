@@ -1,27 +1,32 @@
+import pytest
 import numpy as np
-from services.antispoof import get_detector
+from services.antispoof import AntiSpoofResult
+from services.antispoof.mock import MockAntiSpoofDetector
 
-def test_mock_detector():
-    detector = get_detector()
-    # It should fallback to mock in our test env if weights missing, 
-    # but the interface should be identical either way.
+@pytest.mark.asyncio
+async def test_mock_detector():
+    detector = MockAntiSpoofDetector()
+    assert detector.is_loaded()
     
     # 3 second window of silence
-    window = np.zeros(48000, dtype=np.int16)
+    window = np.zeros(48000, dtype=np.float32)
     
-    metrics = {"speech_ratio": 0.0, "quality": "poor"}
+    result = await detector.analyze(window, 16000)
     
-    result = detector.predict(window, metrics)
+    assert isinstance(result, AntiSpoofResult)
+    assert result.model_name == "VoiceGuardMock"
+    assert result.model_version == "1.0.0"
     
-    assert "model" in result
-    assert "model_version" in result
-    assert "spoof_probability" in result
-    assert "calibrated_probability" in result
-    assert "window_quality" in result
-    assert "inference_ms" in result
+    # Check probabilities
+    assert isinstance(result.spoof_probability, float)
+    assert isinstance(result.genuine_probability, float)
+    assert result.spoof_probability + result.genuine_probability == 1.0
     
-    assert isinstance(result["spoof_probability"], float)
-    assert isinstance(result["inference_ms"], float)
-    
-    if result["model"] == "VoiceGuardMock":
-        assert result["spoof_probability"] == 0.5 # Silence fallback logic in mock
+    # Check mock logic fallback
+    assert result.spoof_probability == 0.5
+    assert result.quality_usable is False
+    assert result.inference_time_ms >= 0.0
+
+    health = detector.get_health()
+    assert health["provider"] == "mock"
+    assert health["status"] == "healthy"

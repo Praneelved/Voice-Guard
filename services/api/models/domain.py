@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Integer, Boolean, ForeignKey, DateTime, JSON, Text
+from sqlalchemy import Column, String, Float, Integer, Boolean, ForeignKey, DateTime, JSON, Text, ARRAY
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -17,6 +17,27 @@ class User(Base, TimestampMixin):
     role = Column(String(50), nullable=False, default="viewer")
     
     organization = relationship("Organization")
+
+class UserDevice(Base, TimestampMixin):
+    __tablename__ = "user_devices"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    push_token = Column(String(255), nullable=False, unique=True)
+    platform = Column(String(50), nullable=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    last_seen_at = Column(DateTime(timezone=True), nullable=False)
+    
+    user = relationship("User")
+
+class ProtectedNumber(Base, TimestampMixin):
+    __tablename__ = "protected_numbers"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    provider = Column(String(50), nullable=False) # e.g. "twilio"
+    provider_number = Column(String(50), nullable=False, index=True) # e.g. "+1234567890"
+    enabled = Column(Boolean, nullable=False, default=True)
+    
+    user = relationship("User")
 
 class CallSession(Base, TimestampMixin):
     __tablename__ = "call_sessions"
@@ -79,6 +100,27 @@ class SpeakerProfile(Base, TimestampMixin):
     embedding_path = Column(Text, nullable=False)
     
     user = relationship("User")
+
+class TrustedVoice(Base, TimestampMixin):
+    __tablename__ = "trusted_voices"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    label = Column(String(100), nullable=True) # e.g. 'CEO', 'Manager'
+    
+    user = relationship("User")
+    embeddings = relationship("VoiceEmbedding", back_populates="trusted_voice", cascade="all, delete-orphan")
+
+class VoiceEmbedding(Base, TimestampMixin):
+    __tablename__ = "voice_embeddings"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    trusted_voice_id = Column(UUID(as_uuid=True), ForeignKey("trusted_voices.id"), nullable=False, index=True)
+    
+    embedding = Column(ARRAY(Float), nullable=False)
+    model_name = Column(String(100), nullable=False)
+    model_version = Column(String(50), nullable=False)
+    
+    trusted_voice = relationship("TrustedVoice", back_populates="embeddings")
 
 class VerificationAction(Base, TimestampMixin):
     __tablename__ = "verification_actions"

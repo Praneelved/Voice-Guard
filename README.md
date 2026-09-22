@@ -7,7 +7,7 @@ VoiceGuard is a cybersecurity platform designed to protect users against deepfak
 VoiceGuard consists of:
 - **Mobile Application**: A React Native (Expo) frontend providing live dashboards, history logs, alerts, and trusted voice enrollment.
 - **Backend API**: A Python FastAPI service that orchestrates real-time WebSocket communication, PostgreSQL persistence, and call state.
-- **Audio Pipeline & AI**: A highly concurrent, non-blocking pipeline handling live base64 `mu-law` audio decoding, Voice Activity Detection (VAD), overlapping 3-second speech windowing, and inference via an Anti-Spoofing deep learning model.
+- **Audio Pipeline & AI**: A highly concurrent, non-blocking pipeline handling live base64 `mu-law` audio decoding, Silero Voice Activity Detection (VAD), overlapping speech windowing, and inference. See [Audio Pipeline Documentation](docs/AUDIO_PIPELINE.md) and [AASIST Integration Guide](docs/AASIST_INTEGRATION.md) for full details on the machine learning implementation.
 - **State & Data**: Redis is used for fast cross-process pub/sub broadcasting and transient call state. PostgreSQL (Supabase) is used for robust relational persistence of telemetry, models, and alert history.
 
 ## Prerequisites
@@ -92,7 +92,6 @@ Once everything is running:
 5. The Mobile App will instantly render the changing risk levels and signal anomalies in real-time. 
 
 ## Remaining Tasks / Roadmap
-- **Model Integration**: Swap the mock inference logic in `services/antispoof/__init__.py` with the actual PyTorch `AASIST` model weights.
 - **Speaker Verification**: Implement ECAPA-TDNN embeddings to allow enrollment of trusted voices.
 - **Authentication**: Integrate Supabase Auth to securely associate users, organizations, and call history.
 - **Out-of-band Verification**: Implement push-notification actions triggered when a high-risk spike is detected.

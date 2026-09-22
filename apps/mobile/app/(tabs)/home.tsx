@@ -7,6 +7,7 @@ import { useAuthStore } from '../../stores/useAuthStore';
 import { useCallStore } from '../../stores/useCallStore';
 import { useLiveCallStore } from '../../stores/liveCallStore';
 import { mockActiveCall } from '../../services/mockDataService';
+import { CONFIG } from '../../constants/config';
 import { useAlerts } from '../../hooks/api/useAlerts';
 import { useCalls } from '../../hooks/api/useCalls';
 import { useSpeakers } from '../../hooks/api/useSpeakers';
@@ -77,7 +78,7 @@ export default function HomeScreen() {
               style={{marginTop: 12}}
             />
           </Card>
-        ) : (
+        ) : CONFIG.USE_MOCKS ? (
           <Card style={styles.card}>
             <Text style={styles.cardTitle}>Simulate Incoming Call</Text>
             <Button 
@@ -85,7 +86,7 @@ export default function HomeScreen() {
               onPress={startMockCall} 
             />
           </Card>
-        )}
+        ) : null}
 
         <Card style={styles.card}>
           <View style={styles.cardHeaderRow}>

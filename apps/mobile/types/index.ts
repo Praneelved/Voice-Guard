@@ -8,9 +8,16 @@ export interface User {
 export type CallStatus = 'active' | 'completed' | 'failed';
 export type RiskLevel = 'LOW' | 'CAUTION' | 'HIGH' | 'INSUFFICIENT_EVIDENCE' | 'ANALYSIS_UNAVAILABLE' | 'STARTING' | 'ANALYZING';
 
+export interface CallEvent {
+  timestamp: string;
+  description: string;
+  risk_level?: RiskLevel | string;
+  risk_score?: number;
+}
+
 export interface Call {
   id: string;
-  providerCallId: string;
+  providerCallId?: string; // It was mapped to callerNumber but let's keep optional if needed
   callerNumber: string;
   startedAt: string;
   endedAt?: string;
@@ -18,17 +25,30 @@ export interface Call {
   status: CallStatus;
   maxRiskScore: number;
   finalRiskLevel?: RiskLevel;
+  analyzedDuration?: number;
+  timeline?: CallEvent[];
 }
 
 export interface RiskUpdate {
   callId: string;
-  rollingRiskScore: number; // 0-100
-  analysisStatus: RiskLevel;
-  antiSpoofSignal: 'safe' | 'warning' | 'danger' | 'unknown';
-  speakerConsistency: 'verifying' | 'verified' | 'mismatch' | 'unknown';
-  signalAnomaly: 'none' | 'detected' | 'unknown';
-  audioQuality: 'good' | 'poor' | 'unknown';
-  usableSpeechDuration: number; // seconds
+  riskScore: number;
+  riskLevel: RiskLevel;
+  confidence: number;
+  usableSpeechDuration: number;
+  
+  antiSpoof: {
+    status: string;
+    score: number | null;
+    confidence: number | null;
+  };
+  speakerVerification: {
+    available: boolean;
+    similarity: number | null;
+  };
+  audioQuality: {
+    status: string;
+  };
+  
   updatedAt: string;
 }
 
@@ -52,26 +72,38 @@ export interface TrustedVoice {
 export type ConnectionState = 'CONNECTING' | 'LIVE' | 'RECONNECTING' | 'DISCONNECTED';
 
 export interface BaseWsEvent {
-  type: string;
-  timestamp_ms: number;
+  event_type: string;
+  timestamp: string;
   call_id: string;
+  session_id: string;
 }
 
 export interface RiskUpdateWsEvent extends BaseWsEvent {
-  type: 'risk.update';
-  risk: number; // 0-1
-  level: RiskLevel;
-  confidence: number;
-  quality: 'good' | 'poor' | 'unknown';
-  signals: {
-    antispoof: number;
-    speaker_mismatch: number | null;
-    signal_anomaly: number | null;
+  event_type: 'risk.update';
+  payload: {
+    riskScore: number;
+    riskLevel: RiskLevel;
+    confidence: number;
+    signals: {
+      antiSpoof: {
+        status: string;
+        score: number | null;
+        confidence: number | null;
+      };
+      speakerVerification: {
+        available: boolean;
+        similarity: number | null;
+      };
+      audioQuality: {
+        status: string;
+      };
+    };
+    evidence: Array<{ code: string; severity: string }>;
   };
 }
 
 export interface WsEvent extends BaseWsEvent {
-  type: 'call.started' | 'risk.update' | 'risk.alert' | 'analysis.insufficient' | 'analysis.unavailable' | 'verification.requested' | 'verification.completed' | 'call.ended';
-  [key: string]: any;
+  event_type: 'call.started' | 'risk.update' | 'risk.alert' | 'analysis.insufficient' | 'analysis.unavailable' | 'verification.requested' | 'verification.completed' | 'call.ended';
+  payload: any;
 }
 

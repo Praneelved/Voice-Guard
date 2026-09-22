@@ -1,6 +1,7 @@
 import { AppState, AppStateStatus } from 'react-native';
 import { CONFIG } from '../../constants/config';
 import { WsEvent, ConnectionState } from '../../types';
+import { useAuthStore } from '../../stores/useAuthStore';
 
 export class CallWebSocketClient {
   private ws: WebSocket | null = null;
@@ -50,7 +51,8 @@ export class CallWebSocketClient {
     this.closeSocket();
     this.onStateChange(this.reconnectAttempts > 0 ? 'RECONNECTING' : 'CONNECTING');
 
-    const wsUrl = `${CONFIG.WS_BASE_URL}/calls/${this.callId}/events`;
+    const token = useAuthStore.getState().token;
+    const wsUrl = `${CONFIG.WS_BASE_URL}/calls/${this.callId}/events${token ? `?token=${token}` : ''}`;
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
@@ -61,7 +63,7 @@ export class CallWebSocketClient {
     this.ws.onmessage = (e) => {
       try {
         const event = JSON.parse(e.data) as WsEvent;
-        if (event && event.type) {
+        if (event && event.event_type) {
           this.onEvent(event);
         }
       } catch (error) {

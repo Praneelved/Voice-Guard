@@ -1,13 +1,14 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ScreenContainer, EmptyState, Button, Badge } from '../../components';
-import { mockTrustedVoices } from '../../services/mockDataService';
+import { ScreenContainer, EmptyState, Button, Badge, Loading } from '../../components';
+import { useSpeakers } from '../../hooks/api/useSpeakers';
 import { colors } from '../../theme/colors';
 import { TrustedVoice } from '../../types';
 
 export default function TrustedVoicesScreen() {
   const router = useRouter();
+  const { data: voices, isLoading } = useSpeakers();
 
   const renderVoice = (voice: TrustedVoice) => (
     <View key={voice.id} style={styles.voiceCard}>
@@ -43,13 +44,15 @@ export default function TrustedVoicesScreen() {
           style={styles.addBtn}
         />
         
-        {mockTrustedVoices.length === 0 ? (
+        {isLoading ? (
+          <Loading size="large" />
+        ) : !voices || voices.length === 0 ? (
           <EmptyState 
             title="No Trusted Voices" 
             message="Enroll voices of family and coworkers to verify their identity on calls."
           />
         ) : (
-          mockTrustedVoices.map(renderVoice)
+          voices.map(renderVoice)
         )}
       </ScrollView>
     </ScreenContainer>

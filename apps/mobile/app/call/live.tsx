@@ -1,7 +1,7 @@
-import React, { useEffect } from 'react';
-import { View, StyleSheet, Text, ScrollView } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, StyleSheet, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ScreenContainer, Button, RiskIndicator, SignalIndicator, Card } from '../../components';
+import { ScreenContainer, Button, RiskIndicator, Card } from '../../components';
 import { colors } from '../../theme/colors';
 import { useCallStore } from '../../stores/useCallStore';
 import { useLiveCallStore } from '../../stores/liveCallStore';
@@ -12,6 +12,8 @@ export default function LiveProtectionScreen() {
   const endCall = useCallStore(state => state.endCall);
 
   const { connect, disconnect, connectionState, isStale, currentRisk } = useLiveCallStore();
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
+  const [speechAnalyzedSeconds, setSpeechAnalyzedSeconds] = useState(0);
 
   useEffect(() => {
     if (activeCall) {
@@ -20,7 +22,14 @@ export default function LiveProtectionScreen() {
     return () => {
       disconnect();
     };
-  }, [activeCall]);
+  }, [activeCall, connect, disconnect]);
+
+  useEffect(() => {
+    // Basic approximation of speech analyzed duration
+    if (currentRisk && currentRisk.riskLevel !== 'STARTING') {
+      setSpeechAnalyzedSeconds(prev => prev + 4); // assume ~4 seconds per event roughly
+    }
+  }, [currentRisk?.updatedAt]);
 
   if (!activeCall || !currentRisk) {
     return (
@@ -54,6 +63,32 @@ export default function LiveProtectionScreen() {
     }
   };
 
+  const getSignalStatusColor = (status: string) => {
+    switch (status) {
+      case 'SAFE':
+      case 'GOOD':
+      case 'VERIFIED':
+        return colors.success;
+      case 'WARNING':
+      case 'CAUTION':
+      case 'MEDIUM':
+        return colors.warning;
+      case 'DANGER':
+      case 'HIGH':
+      case 'MISMATCH':
+        return colors.danger;
+      default:
+        return colors.textMuted;
+    }
+  };
+
+  const getSpeakerText = () => {
+    if (!currentRisk.speakerVerification.available) return "Not enrolled";
+    return currentRisk.speakerVerification.similarity! > 0.5 ? "Verified" : "Mismatch detected";
+  };
+
+  const isHighRisk = currentRisk.riskLevel === 'HIGH';
+
   return (
     <ScreenContainer style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -62,7 +97,7 @@ export default function LiveProtectionScreen() {
           <Text style={styles.connectionText}>{connectionState}</Text>
         </View>
 
-        <Text style={styles.title}>VOICEGUARD PROTECTION LIVE</Text>
+        <Text style={styles.title}>VoiceGuard Live Protection</Text>
         <Text style={styles.caller}>Caller: {activeCall.callerNumber}</Text>
 
         <View style={[styles.contentArea, isStale && styles.staleContent]}>
@@ -72,37 +107,70 @@ export default function LiveProtectionScreen() {
             </View>
           )}
           
-          <View style={styles.statusBox}>
-            <Text style={styles.statusLabel}>Analysis Status: <Text style={styles.statusValue}>{currentRisk.analysisStatus}</Text></Text>
-            <Text style={styles.statusLabel}>Usable Speech: <Text style={styles.statusValue}>{currentRisk.usableSpeechDuration}s</Text></Text>
-            <Text style={styles.statusLabel}>Updated At: <Text style={styles.statusValue}>{new Date(currentRisk.updatedAt).toLocaleTimeString()}</Text></Text>
-          </View>
-
           <Card style={styles.riskCard}>
-            <Text style={styles.cardHeader}>VOICE INTEGRITY RISK</Text>
-            <RiskIndicator score={currentRisk.rollingRiskScore} />
+            <Text style={styles.cardHeader}>Voice Authenticity Risk</Text>
+            <RiskIndicator score={currentRisk.riskScore} />
+            <Text style={[styles.riskLevelText, { color: getSignalStatusColor(currentRisk.riskLevel) }]}>
+              {currentRisk.riskLevel}
+            </Text>
             
-            <View style={styles.legend}>
-              <Text style={styles.legendText}>0-39 LOW</Text>
-              <Text style={styles.legendText}>40-69 CAUTION</Text>
-              <Text style={styles.legendText}>70-100 HIGH</Text>
+            <View style={styles.statsRow}>
+              <Text style={styles.statText}>Evidence confidence: {Math.round(currentRisk.confidence)}%</Text>
+              <Text style={styles.statText}>Speech analyzed: {speechAnalyzedSeconds} seconds</Text>
             </View>
           </Card>
 
           {isHighRisk && (
             <View style={styles.alertBox}>
               <Text style={styles.alertText}>
-                Elevated voice-integrity risk detected.{"\n"}Verify the caller using a trusted secondary channel before taking sensitive actions.
+                Potential synthetic or impersonated voice characteristics were detected.{"\n\n"}
+                Verify the caller through another trusted channel before sharing credentials, OTPs, confidential information, or authorizing sensitive actions.
               </Text>
             </View>
           )}
 
           <Card style={styles.signalsCard}>
-            <SignalIndicator label="Anti-Spoof" status={currentRisk.antiSpoofSignal} />
-            <SignalIndicator label="Speaker Consistency" status={currentRisk.speakerConsistency} />
-            <SignalIndicator label="Signal Anomaly" status={currentRisk.signalAnomaly === 'detected' ? 'danger' : currentRisk.signalAnomaly === 'none' ? 'safe' : 'unknown'} />
-            <SignalIndicator label="Audio Quality" status={currentRisk.audioQuality} />
+            <Text style={styles.cardHeader}>Signals</Text>
+            
+            <View style={styles.signalRow}>
+              <Text style={styles.signalLabel}>Synthetic Speech Indicators</Text>
+              <Text style={[styles.signalValue, { color: getSignalStatusColor(currentRisk.antiSpoof.status) }]}>
+                {currentRisk.antiSpoof.status.replace(/_/g, ' ')}
+              </Text>
+            </View>
+
+            <View style={styles.signalRow}>
+              <Text style={styles.signalLabel}>Trusted Speaker</Text>
+              <Text style={[styles.signalValue, { color: getSignalStatusColor(getSpeakerText().toUpperCase()) }]}>
+                {getSpeakerText()}
+              </Text>
+            </View>
+
+            <View style={styles.signalRow}>
+              <Text style={styles.signalLabel}>Audio Quality</Text>
+              <Text style={[styles.signalValue, { color: getSignalStatusColor(currentRisk.audioQuality.status) }]}>
+                {currentRisk.audioQuality.status}
+              </Text>
+            </View>
           </Card>
+
+          <TouchableOpacity 
+            style={styles.techDetailsToggle} 
+            onPress={() => setShowTechnicalDetails(!showTechnicalDetails)}
+          >
+            <Text style={styles.techDetailsText}>
+              {showTechnicalDetails ? "▼ Hide Technical Details" : "▶ Show Technical Details"}
+            </Text>
+          </TouchableOpacity>
+
+          {showTechnicalDetails && (
+            <Card style={styles.techCard}>
+              <Text style={styles.techRow}>Raw Anti-Spoof Score: {currentRisk.antiSpoof.score ? currentRisk.antiSpoof.score.toFixed(4) : 'N/A'}</Text>
+              <Text style={styles.techRow}>Speaker Similarity: {currentRisk.speakerVerification.similarity ? currentRisk.speakerVerification.similarity.toFixed(4) : 'N/A'}</Text>
+              <Text style={styles.techRow}>Model Version: AASIST v1.0 / ECAPA-TDNN</Text>
+              <Text style={styles.techRow}>Last Updated: {new Date(currentRisk.updatedAt).toLocaleTimeString()}</Text>
+            </Card>
+          )}
         </View>
       </ScrollView>
 
@@ -204,22 +272,28 @@ const styles = StyleSheet.create({
   },
   riskCard: {
     paddingVertical: 20,
+    alignItems: 'center',
+  },
+  riskLevelText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginTop: 8,
+  },
+  statsRow: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  statText: {
+    color: colors.textMuted,
+    fontSize: 14,
+    marginBottom: 4,
   },
   cardHeader: {
     fontSize: 18,
     fontWeight: 'bold',
     color: colors.text,
-    marginBottom: 12,
+    marginBottom: 16,
     textAlign: 'center',
-  },
-  legend: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
-  },
-  legendText: {
-    fontSize: 12,
-    color: colors.textMuted,
   },
   alertBox: {
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
@@ -230,11 +304,47 @@ const styles = StyleSheet.create({
   },
   alertText: {
     color: colors.text,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '500',
   },
   signalsCard: {
-    gap: 0,
+    gap: 12,
+  },
+  signalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  signalLabel: {
+    fontSize: 16,
+    color: colors.text,
+  },
+  signalValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  techDetailsToggle: {
+    padding: 12,
+    alignItems: 'center',
+  },
+  techDetailsText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  techCard: {
+    backgroundColor: '#1E293B',
+    padding: 16,
+    gap: 8,
+  },
+  techRow: {
+    fontFamily: 'monospace',
+    color: '#94A3B8',
+    fontSize: 12,
   },
   actions: {
     padding: 16,

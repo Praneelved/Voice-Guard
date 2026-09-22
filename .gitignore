@@ -1,6 +1,7 @@
 # Environments
 .env
 .env.*
+!.env.example
 
 # Python
 __pycache__/
@@ -39,3 +40,15 @@ yarn-error.log*
 # OS
 .DS_Store
 *.swp
+
+# AI Model Weights (mounted at runtime, never committed)
+model_weights/
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.onnx
+tmp_ecapa_models/
+
+# Docker
+docker-compose.override.yml

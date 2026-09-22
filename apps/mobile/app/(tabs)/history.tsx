@@ -1,14 +1,18 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ScreenContainer, EmptyState, Badge, ErrorState } from '../../components';
 import { colors } from '../../theme/colors';
 import { Call } from '../../types';
 import { useCalls } from '../../hooks/api/useCalls';
 
+const FILTER_OPTIONS = ['ALL', 'LOW', 'MEDIUM', 'HIGH'];
+
 export default function HistoryScreen() {
   const router = useRouter();
-  const { data: calls, isLoading, error, refetch } = useCalls();
+  const [filter, setFilter] = useState('ALL');
+  
+  const { data: calls, isLoading, error, refetch } = useCalls(filter);
 
   if (error) {
     return (
@@ -17,25 +21,6 @@ export default function HistoryScreen() {
           title="Failed to Load History" 
           message="We couldn't connect to the server." 
           onRetry={refetch} 
-        />
-      </ScreenContainer>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <ScreenContainer safeArea={false} style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </ScreenContainer>
-    );
-  }
-
-  if (!calls || calls.length === 0) {
-    return (
-      <ScreenContainer safeArea={false}>
-        <EmptyState 
-          title="No Call History" 
-          message="You haven't made any protected calls yet."
         />
       </ScreenContainer>
     );
@@ -63,11 +48,48 @@ export default function HistoryScreen() {
     </TouchableOpacity>
   );
 
+  const renderFilter = () => (
+    <View style={styles.filterContainer}>
+      {FILTER_OPTIONS.map(opt => (
+        <TouchableOpacity
+          key={opt}
+          style={[styles.filterChip, filter === opt && styles.filterChipActive]}
+          onPress={() => setFilter(opt)}
+        >
+          <Text style={[styles.filterText, filter === opt && styles.filterTextActive]}>
+            {opt}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
   return (
     <ScreenContainer safeArea={false}>
-      <ScrollView contentContainerStyle={styles.container}>
-        {calls.map(renderCall)}
-      </ScrollView>
+      {renderFilter()}
+      {isLoading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : !calls || calls.length === 0 ? (
+        <EmptyState 
+          title="No Call History" 
+          message={filter === 'ALL' ? "You haven't made any protected calls yet." : `No calls found with ${filter} risk.`}
+        />
+      ) : (
+        <FlatList
+          data={calls}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => renderCall(item)}
+          contentContainerStyle={styles.container}
+          onRefresh={refetch}
+          refreshing={isLoading}
+          onEndReached={() => {
+            // Future implementation: Fetch next page of results
+          }}
+          onEndReachedThreshold={0.5}
+        />
+      )}
     </ScreenContainer>
   );
 }
@@ -77,6 +99,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     flex: 1,
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    padding: 16,
+    paddingBottom: 8,
+    gap: 8,
+  },
+  filterChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  filterChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  filterText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  filterTextActive: {
+    color: '#000',
   },
   container: {
     padding: 16,

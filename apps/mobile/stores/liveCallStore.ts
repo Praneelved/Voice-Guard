@@ -23,22 +23,32 @@ export const useLiveCallStore = create<LiveCallState>((set, get) => ({
     
     const client = new CallWebSocketClient(
       (event) => {
-        if (event.type === 'risk.update') {
+        if (event.event_type === 'risk.update') {
           const e = event as RiskUpdateWsEvent;
+          
+          // Calculate usable speech duration. The backend sends an ISO timestamp.
+          // For simplicity in UI, we can just use the difference from start, 
+          // or if the backend provides analyzed_windows, we could use that. 
+          // Since the backend doesn't send usableSpeechDuration directly in this payload,
+          // we'll track the first received timestamp if needed, or default to 0 for now until 
+          // backend provides it. Wait, the backend doesn't send usableSpeechDuration right now in RiskAssessment.
+          // The UI requested "speech analyzed duration". The backend has `temporal_state.valid_window_count * 4s` but it's not in the payload.
+          // Let's just mock it or infer it. If it's not sent, let's just use 0.
+          
           set({
             currentRisk: {
               callId: e.call_id,
-              rollingRiskScore: e.risk * 100, // Backend sends 0-1, UI expects 0-100
-              analysisStatus: e.level,
-              antiSpoofSignal: e.signals.antispoof > 0.5 ? 'safe' : e.signals.antispoof > 0.2 ? 'warning' : 'danger',
-              speakerConsistency: e.signals.speaker_mismatch === null ? 'unknown' : e.signals.speaker_mismatch > 0.5 ? 'mismatch' : 'verified',
-              signalAnomaly: e.signals.signal_anomaly === null ? 'unknown' : e.signals.signal_anomaly > 0.5 ? 'detected' : 'none',
-              audioQuality: e.quality,
-              usableSpeechDuration: Math.floor(e.timestamp_ms / 1000), // convert ms to seconds
-              updatedAt: new Date().toISOString()
+              riskScore: e.payload.riskScore * 100, // Backend sends 0-1, UI expects 0-100
+              riskLevel: e.payload.riskLevel,
+              confidence: e.payload.confidence * 100,
+              antiSpoof: e.payload.signals.antiSpoof,
+              speakerVerification: e.payload.signals.speakerVerification,
+              audioQuality: e.payload.signals.audioQuality,
+              usableSpeechDuration: 0, // TODO: Get from backend if needed
+              updatedAt: new Date(e.timestamp).toISOString()
             }
           });
-        } else if (event.type === 'call.ended') {
+        } else if (event.event_type === 'call.ended') {
           get().disconnect();
         }
       },

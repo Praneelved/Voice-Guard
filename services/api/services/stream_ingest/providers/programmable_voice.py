@@ -7,7 +7,6 @@ import logging
 try:
     import audioop
 except ImportError:
-    # Fallback to audioop-lts on Python 3.13+
     pass
 
 from .base import ProviderAdapter
@@ -23,18 +22,31 @@ class TwilioProgrammableVoiceAdapter(ProviderAdapter):
         self._call_id = None
         self._stream_sid = None
         self._track = "inbound" # We typically only care about what the caller says
+        self._expected_speaker_id = None
+        self.custom_parameters = {}
 
     @property
     def call_id(self) -> Optional[str]:
         return self._call_id
 
-    def parse_message(self, message: dict) -> Tuple[Optional[str], Optional[np.ndarray]]:
+    def set_expected_speaker(self, expected_speaker_id: Optional[str]):
+        self._expected_speaker_id = expected_speaker_id
+
+    def get_expected_speaker(self) -> Optional[str]:
+        return self._expected_speaker_id
+
+    def parse_message(self, message: dict) -> Tuple[Optional[str], Optional[str]]:
         event = message.get("event")
         
         if event == "start":
             start_data = message.get("start", {})
             self._call_id = start_data.get("callSid")
             self._stream_sid = start_data.get("streamSid")
+            
+            self.custom_parameters = start_data.get("customParameters", {})
+            if "expected_speaker_id" in self.custom_parameters:
+                self._expected_speaker_id = self.custom_parameters["expected_speaker_id"]
+                
             logger.info(f"Twilio stream started. CallSid: {self._call_id}, StreamSid: {self._stream_sid}")
             return "start", None
             
@@ -51,24 +63,8 @@ class TwilioProgrammableVoiceAdapter(ProviderAdapter):
             if not payload:
                 return "ignore", None
                 
-            # 1. Base64 Decode
-            raw_bytes = base64.b64decode(payload)
-            
-            # 2. Decode G.711 mu-law to 16-bit linear PCM
-            pcm_bytes = audioop.ulaw2lin(raw_bytes, 2)
-            
-            # 3. Convert to NumPy array
-            pcm_array = np.frombuffer(pcm_bytes, dtype=np.int16)
-            
-            # 4. Upsample 8000Hz to 16000Hz
-            # Librosa expects float32 in range [-1.0, 1.0]
-            float_array = pcm_array.astype(np.float32) / 32768.0
-            resampled_float = librosa.resample(float_array, orig_sr=8000, target_sr=16000)
-            
-            # Convert back to Int16
-            canonical_pcm16 = (resampled_float * 32767).astype(np.int16)
-            
-            return "media", canonical_pcm16
+            # Yield the raw base64 payload; decoding is handled by the AudioPreprocessor
+            return "media", payload
             
         elif event == "stop":
             logger.info(f"Twilio stream stopped. CallSid: {self._call_id}")

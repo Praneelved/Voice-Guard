@@ -1,0 +1,78 @@
+# ============================================
+# VoiceGuard — Docker Compose
+# ============================================
+# Usage:
+#   docker compose up        — start all services
+#   docker compose down      — stop and remove containers
+#   docker compose up -d     — start detached
+#   docker compose logs -f   — follow logs
+#
+# PostgreSQL is NOT included here.
+# VoiceGuard uses hosted Supabase PostgreSQL.
+# Set DATABASE_URL in .env to point at your Supabase instance.
+# ============================================
+
+services:
+
+  # ------------------------------------------
+  # Redis — pub/sub, caching, temporal state
+  # ------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: voiceguard-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 60 1000
+
+  # ------------------------------------------
+  # VoiceGuard API
+  # Handles: REST API, Twilio webhooks,
+  #   WebSocket streaming, AI inference
+  # ------------------------------------------
+  api:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+      args:
+        COMPUTE: cpu
+    container_name: voiceguard-api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    env_file:
+      - ./services/api/.env
+    environment:
+      - ENV=${ENV:-production}
+      - REDIS_URL=redis://redis:6379
+      - PORT=8000
+      # Model path inside the container (mapped via volume below)
+      - AASIST_MODEL_PATH=/app/model_weights/aasist
+      - SPEECHBRAIN_CACHE_DIR=/app/model_weights/speechbrain
+    volumes:
+      # Mount model weights from host — never baked into the image
+      - ${MODEL_WEIGHTS_DIR:-./model_weights}:/app/model_weights:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+
+volumes:
+  redis_data:
+    driver: local
